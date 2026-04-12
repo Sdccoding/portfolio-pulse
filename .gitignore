@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+ENV/
+env/
+.env
+
+# macOS
+.DS_Store
+
+# Project Specific
+portfolio.csv
+portfolio - Combined.csv
+scout_suggestions.json
+thesis_metadata.json
+
+# IDEs
+.vscode/
+.idea/
