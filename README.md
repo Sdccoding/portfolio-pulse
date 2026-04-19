@@ -19,13 +19,13 @@
 ### 1. Prerequisites
 - Python 3.11+
 - A Google Cloud Platform (GCP) Project with **Cloud Run** and **Cloud Storage** enabled.
-- A [Gemini API Key](https://aistudio.google.com/app/apikey)
+- A Gemini API Key (Generate one for free at Google AI Studio)
 - A Telegram Bot (created via [@BotFather](https://t.me/botfather))
 
-### 2. State & Data Security
-To prevent financial data leaks on GitHub, your portfolio state and investment memories are natively secured inside Google Cloud Storage (GCS).
+### 2. Google Cloud Storage (GCS)
+Your portfolio state and investment memories are natively secured inside Google Cloud Storage.
 1. Create a GCS bucket (e.g., `gs://portfolio-pulse-memory/`).
-2. Upload your broker's `portfolio.csv` to this bucket securely.
+2. Upload your broker's `portfolio.csv` to this bucket.
 
 ### 3. Serverless Deployment
 The infrastructure is 100% Serverless and runs reliably without manual interactions.
