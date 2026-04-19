@@ -11,6 +11,7 @@ Responsibilities:
   - Send the formatted report via Telegram Bot API
   - Support message splitting for Telegram's character limits
 """
+from loguru import logger
 
 import os
 import re
@@ -262,13 +263,13 @@ def send_telegram_update(report_text: str) -> bool:
         }
         resp = requests.post(url, json=payload)
         if not resp.ok:
-            print(f"  [Telegram] Error: {resp.text}")
+            logger.error(f"  [Telegram] Error: {resp.text}")
             success = False
             
     return success
 
 if __name__ == "__main__":
-    print("Telegram Notifier Dry Run")
+    logger.info("Telegram Notifier Dry Run")
     test_briefing = {
         "portfolio_overview": {
             "portfolio_health": "Bullish",
@@ -287,7 +288,7 @@ if __name__ == "__main__":
         "new_tickers_thesis": {"SBIN": "PSU Re-rating"},
     }
     report = build_telegram_report(test_briefing)
-    print("-" * 30)
-    print(report)
-    print("-" * 30)
-    print("Check .env for credentials before live run.")
+    logger.info("-" * 30)
+    logger.info(report)
+    logger.info("-" * 30)
+    logger.info("Check .env for credentials before live run.")

@@ -16,6 +16,7 @@ Usage:
   python main.py --equity-only # Only analyse equity holdings
   python main.py --fix TICKER "New Thesis"  # Manually correct a thesis
 """
+from loguru import logger
 
 import argparse
 import os
@@ -58,24 +59,24 @@ def validate_env() -> list[tuple[str, str]]:
 
 def abort_with_missing_keys(missing: list[tuple[str, str]]) -> None:
     """Print a clear, actionable error and exit."""
-    print("\n" + "=" * 65)
-    print("  ❌  Portfolio Pulse — Configuration Error")
-    print("=" * 65)
-    print(
+    logger.info("\n" + "=" * 65)
+    logger.error("  ❌  Portfolio Pulse — Configuration Error")
+    logger.info("=" * 65)
+    logger.info(
         "\n  The following required environment variables are missing\n"
         "  or still contain placeholder values in your .env file:\n"
     )
     for key, desc in missing:
-        print(f"    ✗  {key}")
-        print(f"         └─ {desc}\n")
-    print("  ─" * 33)
-    print(
+        logger.error(f"    ✗  {key}")
+        logger.info(f"         └─ {desc}\n")
+    logger.info("  ─" * 33)
+    logger.info(
         "\n  How to fix:\n"
         "    1. Open  .env  (same directory as main.py)\n"
         "    2. Replace each placeholder with a real value.\n"
         "    3. Re-run:  python main.py\n"
     )
-    print("=" * 65 + "\n")
+    logger.info("=" * 65 + "\n")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -100,14 +101,14 @@ SCOUT_JSON    = os.path.join(BASE_DIR, "scout_suggestions.json")
 # ---------------------------------------------------------------------------
 
 def load_portfolio_csv(path: str = PORTFOLIO_CSV) -> pd.DataFrame:
-    """Load and return the cleaned portfolio DataFrame."""
-    if not os.path.exists(path):
-        print(f"[ERROR] portfolio.csv not found at: {path}")
+    """Load and return the cleaned portfolio DataFrame using the robust ingestion engine."""
+    from ingestion.csv_source import CSVPortfolioSource
+    try:
+        source = CSVPortfolioSource(csv_path=path)
+        return source.get_dataframe()
+    except Exception as e:
+        logger.error(f"[ERROR] Loading portfolio failed: {e}")
         sys.exit(1)
-    # print(f"[1/5] Loading portfolio from '{os.path.basename(path)}'...")
-    df = core.load_portfolio(path)
-    # print(f"      ✓ {len(df)} holdings loaded.")
-    return df
 
 
 def load_scout_suggestions() -> list[dict]:
@@ -119,9 +120,9 @@ def load_scout_suggestions() -> list[dict]:
       2. Saves the fresh picks to scout_suggestions.json as a cache.
       3. Falls back to the cached JSON if the live call fails.
     """
-    # print("[2/5] Fetching live scout suggestions (Gemini + Google Search)...")
+    # logger.info("[2/5] Fetching live scout suggestions (Gemini + Google Search)...")
     suggestions = core.fetch_scout_suggestions(save_to_file=True)
-    # print(f"      ✓ {len(suggestions)} scout picks ready.")
+    # logger.info(f"      ✓ {len(suggestions)} scout picks ready.")
     return suggestions
 
 
@@ -207,59 +208,59 @@ def print_console_summary(briefing: dict) -> None:
     snap  = briefing["portfolio_snapshot"]
     overview = briefing.get("portfolio_overview", {})
 
-    print("\n" + "=" * 65)
-    print("  📊  PORTFOLIO PULSE — DAILY BRIEFING")
-    print("=" * 65)
-    print(f"\n  Date        : {briefing['date']}")
-    print(f"  Holdings    : {snap['total_holdings']}")
-    print(f"  Invested    : ₹{snap['invested_value']:>14,.2f}")
-    print(f"  Present Val : ₹{snap['present_value']:>14,.2f}")
-    print(f"  Unrealized  : ₹{snap['unrealized_pnl']:>14,.2f}")
-    print(f"  P&L %       :  {snap['pnl_pct']:>13.2f}%\n")
+    logger.info("\n" + "=" * 65)
+    logger.info("  📊  PORTFOLIO PULSE — DAILY BRIEFING")
+    logger.info("=" * 65)
+    logger.info(f"\n  Date        : {briefing['date']}")
+    logger.info(f"  Holdings    : {snap['total_holdings']}")
+    logger.info(f"  Invested    : ₹{snap['invested_value']:>14,.2f}")
+    logger.info(f"  Present Val : ₹{snap['present_value']:>14,.2f}")
+    logger.info(f"  Unrealized  : ₹{snap['unrealized_pnl']:>14,.2f}")
+    logger.info(f"  P&L %       :  {snap['pnl_pct']:>13.2f}%\n")
 
     health    = overview.get("portfolio_health", "N/A")
     rationale = overview.get("portfolio_health_rationale", "")
-    print(f"  📈 Portfolio Health : {health}")
+    logger.info(f"  📈 Portfolio Health : {health}")
     if rationale:
-        print(f"     {rationale}")
+        logger.info(f"     {rationale}")
 
     green_flags = overview.get("green_flags", [])
     red_flags   = overview.get("red_flags",   [])
     neutral     = overview.get("neutral_watch", [])
 
     if green_flags:
-        print(f"\n  🟢 Green Flags ({len(green_flags)}):")
+        logger.info(f"\n  🟢 Green Flags ({len(green_flags)}):")
         for g in green_flags:
-            print(f"     {g.get('symbol',''):18s}  {g.get('headline','')[:60]}")
+            logger.info(f"     {g.get('symbol',''):18s}  {g.get('headline','')[:60]}")
 
     if red_flags:
-        print(f"\n  🔴 Red Flags ({len(red_flags)}):")
+        logger.info(f"\n  🔴 Red Flags ({len(red_flags)}):")
         for r in red_flags:
-            print(f"     {r.get('symbol',''):18s}  {r.get('headline','')[:60]}")
+            logger.info(f"     {r.get('symbol',''):18s}  {r.get('headline','')[:60]}")
 
     if neutral:
-        print(f"\n  👁  Watch List ({len(neutral)}):")
+        logger.info(f"\n  👁  Watch List ({len(neutral)}):")
         for w in neutral:
-            print(f"     {w.get('symbol',''):18s}  {w.get('reason','')[:60]}")
+            logger.info(f"     {w.get('symbol',''):18s}  {w.get('reason','')[:60]}")
 
     deep_dive = briefing.get("deep_dive", [])
     if deep_dive:
-        print(f"\n  🔍 Deep Dive ({len(deep_dive)} flagged holdings):")
+        logger.info(f"\n  🔍 Deep Dive ({len(deep_dive)} flagged holdings):")
         for d in deep_dive:
             signal = d.get("action_signal", "HOLD")
             emoji  = {"BUY MORE": "🟢", "HOLD": "🟡", "CONSIDER EXIT": "🔴"}.get(signal, "⚪")
-            print(f"     {emoji} {d.get('symbol',''):18s}  {signal:15s}  {d.get('action_reason','')[:45]}")
+            logger.info(f"     {emoji} {d.get('symbol',''):18s}  {signal:15s}  {d.get('action_reason','')[:45]}")
 
     scouts = briefing.get("scout_suggestions", [])
     if scouts:
-        print(f"\n  🔭 Scout Picks ({len(scouts)} ideas):")
+        logger.info(f"\n  🔭 Scout Picks ({len(scouts)} ideas):")
         for s in scouts:
             sym    = s.get('ticker') or s.get('symbol', 'N/A')
             price  = s.get('current_price_inr') or s.get('current_price', 'N/A')
             reason = s.get('why') or s.get('rationale', '')
-            print(f"     {sym:12s} @ ₹{str(price):<8}  {reason[:55]}...")
+            logger.info(f"     {sym:12s} @ ₹{str(price):<8}  {reason[:55]}...")
 
-    print("\n" + "=" * 65)
+    logger.info("\n" + "=" * 65)
 
 
 def trigger_telegram(briefing: dict, dry_run: bool = False) -> None:
@@ -267,34 +268,34 @@ def trigger_telegram(briefing: dict, dry_run: bool = False) -> None:
     Format the Portfolio Briefing as a Telegram message and send it.
     In dry-run mode, only prints the preview without sending.
     """
-    # print(f"[5/5] {'[DRY-RUN] Previewing' if dry_run else 'Sending'} "
+    # logger.info(f"[5/5] {'[DRY-RUN] Previewing' if dry_run else 'Sending'} "
     #       f"Portfolio Briefing via Telegram...")
 
     formatted = telegram_notifier.build_telegram_report(briefing)
 
-    # print("\n" + "-" * 65)
-    # print("  Telegram Message Preview:")
-    # print("-" * 65)
-    # print(formatted)
-    # print("-" * 65)
-    # print(f"  Message length: {len(formatted)} characters")
+    # logger.info("\n" + "-" * 65)
+    # logger.info("  Telegram Message Preview:")
+    # logger.info("-" * 65)
+    # logger.info(formatted)
+    # logger.info("-" * 65)
+    # logger.info(f"  Message length: {len(formatted)} characters")
 
     if dry_run:
-        print("\n  [DRY-RUN] No message sent. Remove --dry-run to send live.")
+        logger.info("\n  [DRY-RUN] No message sent. Remove --dry-run to send live.")
         return
 
     # Live send
     try:
         success = telegram_notifier.send_telegram_update(formatted)
         # if success:
-        #     print(f"\n  ✅ Telegram briefing sent!")
+        #     logger.info(f"\n  ✅ Telegram briefing sent!")
         if not success:
-            print(f"\n  ❌ Telegram send failed (check logs above)")
+            logger.error(f"\n  ❌ Telegram send failed (check logs above)")
     except ValueError as ve:
         # Missing credentials — surface gracefully
-        print(f"\n  ⚠️  Telegram send skipped:\n{ve}")
+        logger.warning(f"\n  ⚠️  Telegram send skipped:\n{ve}")
     except Exception as exc:
-        print(f"\n  ❌ Telegram send failed: {exc}")
+        logger.error(f"\n  ❌ Telegram send failed: {exc}")
 
 # ---------------------------------------------------------------------------
 # 5. CLI Argument Parsing
@@ -343,8 +344,8 @@ def main() -> None:
     if args.fix:
         ticker_fix, thesis_fix = args.fix[0].upper(), args.fix[1]
         thesis_manager.update_thesis(ticker_fix, thesis_fix)
-        print(f"\n  ✅ Thesis for {ticker_fix} updated to: '{thesis_fix}'")
-        print("  Run again without --fix to regenerate the full report.\n")
+        logger.info(f"\n  ✅ Thesis for {ticker_fix} updated to: '{thesis_fix}'")
+        logger.info("  Run again without --fix to regenerate the full report.\n")
         return
 
     # ── Step 2: Load scout_suggestions.json ─────────────────────────────────

@@ -10,6 +10,7 @@ Responsibilities:
   - Mask Quantity fields before any LLM call (privacy)
   - Quality Critic: classify each news item as SIGNAL or NOISE
 """
+from loguru import logger
 
 import os
 import json
@@ -84,7 +85,7 @@ def load_portfolio(csv_path: str = PORTFOLIO_CSV_PATH) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # print(f"[Portfolio] Loaded {len(df)} holdings from '{csv_path}'")
+    # logger.info(f"[Portfolio] Loaded {len(df)} holdings from '{csv_path}'")
     return df
 
 
@@ -271,7 +272,7 @@ def fetch_portfolio_overview(df: pd.DataFrame) -> dict:
     today = _date.today().strftime("%Y-%m-%d")
     portfolio_table = build_portfolio_table(df)
 
-    # print("\n[Analysis] Call 1/2 — Portfolio Overview (all holdings, qualitative flags)...")
+    # logger.info("\n[Analysis] Call 1/2 — Portfolio Overview (all holdings, qualitative flags)...")
 
     prompt = _OVERVIEW_PROMPT.format(today=today, portfolio_table=portfolio_table)
 
@@ -288,12 +289,12 @@ def fetch_portfolio_overview(df: pd.DataFrame) -> dict:
         n_green  = len(data.get("green_flags",   []))
         n_red    = len(data.get("red_flags",     []))
         n_watch  = len(data.get("neutral_watch", []))
-        # print(f"[Analysis] ✓ Overview complete — "
+        # logger.info(f"[Analysis] ✓ Overview complete — "
         #       f"🟢 {n_green} green  🔴 {n_red} red  👁 {n_watch} watch")
         return data
 
     except Exception as e:
-        print(f"[Analysis] ⚠️  Overview call failed: {e}")
+        logger.warning(f"[Analysis] ⚠️  Overview call failed: {e}")
         return {
             "market_overview": "Market data unavailable.",
             "portfolio_health": "Neutral",
@@ -361,7 +362,7 @@ def _try_recover_deep_dive_json(raw: str) -> list[dict]:
                 obj_start = None
 
     if objects:
-        print(f"[Analysis] ↩  Recovered {len(objects)} item(s) from truncated response.")
+        logger.info(f"[Analysis] ↩  Recovered {len(objects)} item(s) from truncated response.")
     return objects
 
 
@@ -409,7 +410,7 @@ def fetch_flagged_deep_dive(df: pd.DataFrame, flagged_symbols: list[str]) -> lis
         n = len(chunk_df)
 
         if n_chunks > 1:
-            print(
+            logger.info(
                 f"[Analysis] Deep dive chunk {chunk_idx}/{n_chunks} "
                 f"— {n} holding(s)…"
             )
@@ -432,15 +433,15 @@ def fetch_flagged_deep_dive(df: pd.DataFrame, flagged_symbols: list[str]) -> lis
                 data = json.loads(raw)
                 chunk_results = data.get("deep_dive", [])
             except json.JSONDecodeError as je:
-                print(f"[Analysis] ⚠️  JSON truncated in chunk {chunk_idx}: {je}. Attempting recovery…")
+                logger.warning(f"[Analysis] ⚠️  JSON truncated in chunk {chunk_idx}: {je}. Attempting recovery…")
                 chunk_results = _try_recover_deep_dive_json(raw)
 
             all_results.extend(chunk_results)
 
         except Exception as e:
-            print(f"[Analysis] ⚠️  Deep dive chunk {chunk_idx} failed: {e}")
+            logger.warning(f"[Analysis] ⚠️  Deep dive chunk {chunk_idx} failed: {e}")
 
-    print(f"[Analysis] ✓ Deep dive complete — {len(all_results)}/{len(flagged_symbols)} holdings analysed.")
+    logger.info(f"[Analysis] ✓ Deep dive complete — {len(all_results)}/{len(flagged_symbols)} holdings analysed.")
     return all_results
 
 
@@ -576,10 +577,10 @@ def classify_news_items(
 
         n_signal = sum(1 for c in classifications if c["classification"] == "SIGNAL")
         n_noise  = len(classifications) - n_signal
-        print(f"[Critic] ✓ Quality filter done — 🔥 {n_signal} SIGNAL  📉 {n_noise} NOISE")
+        logger.info(f"[Critic] ✓ Quality filter done — 🔥 {n_signal} SIGNAL  📉 {n_noise} NOISE")
 
     except Exception as e:
-        print(f"[Critic] ⚠️  Quality classification failed: {e}. Defaulting all to SIGNAL.")
+        logger.warning(f"[Critic] ⚠️  Quality classification failed: {e}. Defaulting all to SIGNAL.")
         # Fail open: mark everything SIGNAL so nothing is silently dropped
         for meta in items:
             src = meta["_source"]
@@ -711,7 +712,7 @@ def fetch_scout_suggestions(save_to_file: bool = True) -> list[dict]:
     from datetime import date as _date
     today_str = _date.today().strftime("%Y-%m-%d")
 
-    # print("\n[Scout] Fetching live scout suggestions via Gemini + Google Search...")
+    # logger.info("\n[Scout] Fetching live scout suggestions via Gemini + Google Search...")
 
     prompt = _SCOUT_PROMPT.format(today=today_str)
 
@@ -729,27 +730,27 @@ def fetch_scout_suggestions(save_to_file: bool = True) -> list[dict]:
         if not suggestions:
             raise ValueError("Gemini returned no suggestions in the JSON.")
 
-        # print(f"[Scout] ✓ {len(suggestions)} fresh picks received for {today_str}.")
+        # logger.info(f"[Scout] ✓ {len(suggestions)} fresh picks received for {today_str}.")
 
         if save_to_file:
             with open(SCOUT_JSON_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
-            # print(f"[Scout] ✓ Saved to {os.path.basename(SCOUT_JSON_PATH)}")
+            # logger.info(f"[Scout] ✓ Saved to {os.path.basename(SCOUT_JSON_PATH)}")
 
         return suggestions
 
     except Exception as e:
-        print(f"[Scout] ⚠️  Live fetch failed ({e}). Falling back to cached file.")
+        logger.warning(f"[Scout] ⚠️  Live fetch failed ({e}). Falling back to cached file.")
         # Graceful fallback — use last saved file if available
         if os.path.exists(SCOUT_JSON_PATH):
             try:
                 with open(SCOUT_JSON_PATH, "r", encoding="utf-8") as f:
                     cached = json.load(f)
                 fallback = cached.get("scout_suggestions") or cached.get("suggestions", [])
-                print(f"[Scout] ↩  Using {len(fallback)} cached suggestions.")
+                logger.info(f"[Scout] ↩  Using {len(fallback)} cached suggestions.")
                 return fallback
             except Exception as fe:
-                print(f"[Scout] ❌ Cache read also failed: {fe}")
+                logger.error(f"[Scout] ❌ Cache read also failed: {fe}")
         return []
 
 
@@ -791,37 +792,37 @@ def get_portfolio_summary(df: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  Portfolio Pulse — Core Engine Smoke Test")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("  Portfolio Pulse — Core Engine Smoke Test")
+    logger.info("=" * 60)
 
     # Load portfolio
     portfolio_df = load_portfolio()
 
     # Summary (no private data)
     summary = get_portfolio_summary(portfolio_df)
-    print("\n[Summary]")
-    print(json.dumps(summary, indent=2, default=str))
+    logger.info("\n[Summary]")
+    logger.info(json.dumps(summary, indent=2, default=str))
 
     # Test quantity masking
     masked_df = mask_quantity(portfolio_df)
-    print("\n[Privacy Check] Quantity masking sample (first 3 rows):")
-    print(masked_df[["Symbol", "Quantity Available"]].head(3).to_string(index=False))
+    logger.info("\n[Privacy Check] Quantity masking sample (first 3 rows):")
+    logger.info(masked_df[["Symbol", "Quantity Available"]].head(3).to_string(index=False))
 
     # Test single ticker analysis (only the first equity holding)
     equities = get_equity_holdings(portfolio_df)
     if not equities.empty:
         safe_equities = mask_quantity(equities)
         first_row = safe_equities.iloc[0]
-        print(f"\n[Test] Fetching single analysis for: {first_row['Symbol']}")
+        logger.info(f"\n[Test] Fetching single analysis for: {first_row['Symbol']}")
         result = fetch_analysis_for_ticker(first_row)
-        print("\n--- Analysis Result ---")
-        print(result["analysis"])
+        logger.info("\n--- Analysis Result ---")
+        logger.info(result["analysis"])
         if result["grounding_sources"]:
-            print("\nGrounding Sources:")
+            logger.info("\nGrounding Sources:")
             for url in result["grounding_sources"]:
-                print(f"  • {url}")
+                logger.info(f"  • {url}")
     else:
-        print("\n[Test] No equity holdings found for analysis test.")
+        logger.info("\n[Test] No equity holdings found for analysis test.")
 
-    print("\n[Done] Smoke test complete.")
+    logger.info("\n[Done] Smoke test complete.")

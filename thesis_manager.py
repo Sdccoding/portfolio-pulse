@@ -9,6 +9,7 @@ Responsibilities:
   - Track new (inferred) tickers for Telegram notification
   - Support manual thesis correction via update_thesis()
 """
+from loguru import logger
 
 import os
 import json
@@ -88,7 +89,7 @@ class ThesisManager:
                 with open(self.metadata_path, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"[ThesisManager] ⚠️  Could not read metadata: {e}. Starting fresh.")
+                logger.warning(f"[ThesisManager] ⚠️  Could not read metadata: {e}. Starting fresh.")
         return {}
 
     def _save(self) -> None:
@@ -97,7 +98,7 @@ class ThesisManager:
             with open(self.metadata_path, "w", encoding="utf-8") as f:
                 json.dump(self._store, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[ThesisManager] ⚠️  Could not save metadata: {e}")
+            logger.warning(f"[ThesisManager] ⚠️  Could not save metadata: {e}")
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ class ThesisManager:
             "updated_at": today,
         }
         self._save()
-        print(f"[ThesisManager] ✓ Thesis for {ticker} updated to: '{new_thesis}'")
+        logger.info(f"[ThesisManager] ✓ Thesis for {ticker} updated to: '{new_thesis}'")
 
     def infer_and_store(self, ticker: str, sector: str = "Unknown") -> str:
         """
@@ -156,7 +157,7 @@ class ThesisManager:
             rationales = data.get("rationales", [thesis])
 
         except Exception as e:
-            print(f"[ThesisManager] ⚠️  Inference failed for {ticker}: {e}")
+            logger.warning(f"[ThesisManager] ⚠️  Inference failed for {ticker}: {e}")
             thesis = "Growth Play"
             rationales = ["Growth Play"]
 
@@ -169,7 +170,7 @@ class ThesisManager:
         }
         self._save()
         self._new_tickers.add(ticker)
-        print(f"[ThesisManager] 🔍 Inferred thesis for {ticker}: '{thesis}'")
+        logger.info(f"[ThesisManager] 🔍 Inferred thesis for {ticker}: '{thesis}'")
         return thesis
 
     def ensure_thesis(self, ticker: str, sector: str = "Unknown") -> str:
@@ -261,13 +262,13 @@ Rules:
                 results[ticker] = thesis
 
             self._save()
-            print(
+            logger.info(
                 f"[ThesisManager] ✓ Batch inferred {len(results)}/{len(missing)} "
                 f"theses in 1 API call"
             )
 
         except Exception as e:
-            print(f"[ThesisManager] ⚠️  Batch inference failed: {e}. Using 'Growth Play' fallback.")
+            logger.warning(f"[ThesisManager] ⚠️  Batch inference failed: {e}. Using 'Growth Play' fallback.")
 
         # Fill in any tickers that were missed/failed
         for ticker, _ in missing:
@@ -311,7 +312,7 @@ Rules:
                 missing.append((ticker, sector))
 
         if missing:
-            print(
+            logger.info(
                 f"[ThesisManager] 🔍 Inferring theses for {len(missing)} new ticker(s) "
                 f"in 1 batch call…"
             )
@@ -355,8 +356,8 @@ if __name__ == "__main__":
         tm.update_thesis(args.ticker, args.thesis)
     elif args.command == "show":
         if not tm._store:
-            print("No theses stored yet.")
+            logger.info("No theses stored yet.")
         else:
-            print(json.dumps(tm._store, indent=2, ensure_ascii=False))
+            logger.info(json.dumps(tm._store, indent=2, ensure_ascii=False))
     else:
         parser.print_help()

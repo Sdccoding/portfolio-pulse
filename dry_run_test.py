@@ -16,6 +16,7 @@ Safety:
 Run:
     ./venv/bin/python3 dry_run_test.py
 """
+from loguru import logger
 
 import sys, os, json, warnings
 warnings.filterwarnings("ignore")
@@ -38,11 +39,11 @@ def run_test(name, fn):
     try:
         fn()
         RESULTS.append((True, name, None))
-        print(f"  {PASS}  {name}")
+        logger.info(f"  {PASS}  {name}")
     except Exception as e:
         RESULTS.append((False, name, str(e)))
-        print(f"  {FAIL}  {name}")
-        print(f"       └─ {e}")
+        logger.error(f"  {FAIL}  {name}")
+        logger.info(f"       └─ {e}")
 
 # ─── Mock Gemini response factory ───────────────────────────────────────────
 MOCK_ANALYSIS = (
@@ -88,18 +89,18 @@ def mock_scout_response():
     return mock_gemini_response(text=json.dumps(payload))
 
 # ============================================================
-print()
-print("=" * 65)
-print("  🧪  Portfolio Pulse — End-to-End Dry Run")
-print(f"  🕐  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print("=" * 65)
+logger.info()
+logger.info("=" * 65)
+logger.info("  🧪  Portfolio Pulse — End-to-End Dry Run")
+logger.info(f"  🕐  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+logger.info("=" * 65)
 
 # ============================================================
 # STAGE 1: Module Imports
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 1 — Module Imports & Dependency Check")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 1 — Module Imports & Dependency Check")
+logger.info(SEP)
 
 def t1_pandas():
     import pandas as _pd
@@ -142,9 +143,9 @@ import main
 # ============================================================
 # STAGE 2: Portfolio CSV
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 2 — portfolio.csv Loading & Validation")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 2 — portfolio.csv Loading & Validation")
+logger.info(SEP)
 
 def t2_exists():
     assert os.path.exists("portfolio.csv"), "portfolio.csv not found in project root!"
@@ -166,13 +167,13 @@ def t2_columns():
 def t2_count():
     df = core.load_portfolio()
     count = len(df)
-    print(f"\n       Holdings loaded: {count}", end="")
+    logger.info(f"\n       Holdings loaded: {count}", end="")
     assert count >= 50, f"Expected ≥50, got {count}"
 
 def t2_instrument_types():
     df = core.load_portfolio()
     types_ = df["Instrument Type"].value_counts().to_dict()
-    print(f"\n       Instrument types: {types_}", end="")
+    logger.info(f"\n       Instrument types: {types_}", end="")
     assert "Equity" in types_
 
 def t2_numeric():
@@ -193,9 +194,9 @@ for name, fn in [
 # ============================================================
 # STAGE 3: Privacy — Quantity Masking
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 3 — Privacy Gate: Quantity Masking")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 3 — Privacy Gate: Quantity Masking")
+logger.info(SEP)
 
 def t3_copy():
     df = core.load_portfolio()
@@ -303,9 +304,9 @@ def _mock_all_gemini_v2(model, contents, config):
 # ============================================================
 # STAGE 4: Gemini Analysis — 2-Call Architecture (FULLY MOCKED)
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 4 — core.py: 2-Call Analysis (FULLY MOCKED, no network)")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 4 — core.py: 2-Call Analysis (FULLY MOCKED, no network)")
+logger.info(SEP)
 
 def t4_portfolio_table():
     """build_portfolio_table includes Qty column and key symbols."""
@@ -336,7 +337,7 @@ def t4_fetch_overview():
     overview = core.fetch_portfolio_overview(df)
     for k in ["market_overview", "portfolio_health", "green_flags", "red_flags", "neutral_watch"]:
         assert k in overview, f"Missing key in overview: {k}"
-    print(f"\n       Green: {len(overview['green_flags'])}  Red: {len(overview['red_flags'])}", end="")
+    logger.info(f"\n       Green: {len(overview['green_flags'])}  Red: {len(overview['red_flags'])}", end="")
 
 def t4_fetch_deep_dive():
     """fetch_flagged_deep_dive covers only the flagged symbols (mocked)."""
@@ -356,7 +357,7 @@ def t4_orchestrator():
         _mock_deep_dive_response() if "deep_dive" in contents else _mock_overview_response())
     result = core.fetch_portfolio_analyses(df)
     assert "overview" in result and "deep_dive" in result
-    print(f"\n       Deep dive symbols: {[d['symbol'] for d in result['deep_dive']]}", end="")
+    logger.info(f"\n       Deep dive symbols: {[d['symbol'] for d in result['deep_dive']]}", end="")
 
 for name, fn in [
     ("build_portfolio_table: has Qty column + key symbols",    t4_portfolio_table),
@@ -371,16 +372,16 @@ for name, fn in [
 # ============================================================
 # STAGE 5: Live Scout Suggestions (fetch_scout_suggestions)
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 5 — core.fetch_scout_suggestions (MOCKED, refreshes on each run)")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 5 — core.fetch_scout_suggestions (MOCKED, refreshes on each run)")
+logger.info(SEP)
 
 def t5_live_fetch_returns_3():
     """Live fetch returns 3 picks (Gemini mocked with valid JSON)."""
     core.client.models.generate_content = MagicMock(return_value=mock_scout_response())
     picks = core.fetch_scout_suggestions(save_to_file=False)
     assert len(picks) == 3, f"Expected 3 picks, got {len(picks)}"
-    print(f"\n       Picks returned: {len(picks)}", end="")
+    logger.info(f"\n       Picks returned: {len(picks)}", end="")
 
 def t5_live_fetch_required_fields():
     """Every pick has the required schema fields."""
@@ -417,7 +418,7 @@ def t5_live_fetch_fallback_on_error():
     picks = core.fetch_scout_suggestions(save_to_file=False)
     # Should not raise — returns cached file or empty list
     assert isinstance(picks, list)
-    print(f"\n       Fallback picks: {len(picks)}", end="")
+    logger.info(f"\n       Fallback picks: {len(picks)}", end="")
 
 for name, fn in [
     ("fetch_scout_suggestions: returns 3 live picks (mocked)",    t5_live_fetch_returns_3),
@@ -430,9 +431,9 @@ for name, fn in [
 # ============================================================
 # STAGE 6: WhatsApp Formatting (no send)
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 6 — telegram_notifier: Message Formatting (no send)")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 6 — telegram_notifier: Message Formatting (no send)")
+logger.info(SEP)
 
 MOCK_OVERVIEW_TAGGED = {
     **MOCK_OVERVIEW,
@@ -492,7 +493,7 @@ def t6_scout_picks():
 def t6_length():
     report = tn.build_telegram_report(MOCK_BRIEFING)
     l = len(report)
-    print(f"\n       Formatted message length: {l} chars", end="")
+    logger.info(f"\n       Formatted message length: {l} chars", end="")
     assert l <= 6000, f"Too long: {l} chars"
 
 def t6_cred_guard():
@@ -524,13 +525,13 @@ for name, fn in [
 # ============================================================
 # STAGE 7: Full Pipeline Integration via main.py
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 7 — main.py: Full Pipeline Integration (MOCKED)")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 7 — main.py: Full Pipeline Integration (MOCKED)")
+logger.info(SEP)
 
 def t7_validate_env():
     missing = main.validate_env()
-    print(f"\n       Missing env keys: {missing}", end="")
+    logger.info(f"\n       Missing env keys: {missing}", end="")
     assert missing == [], f"validate_env raised false alarm: {missing}"
 
 def t7_load_csv():
@@ -547,7 +548,7 @@ def t7_snapshot():
     snap = main.build_portfolio_snapshot(df)
     for k in ["invested_value", "present_value", "unrealized_pnl", "pnl_pct", "total_holdings"]:
         assert k in snap, f"Missing key: {k}"
-    print(
+    logger.info(
         f"\n       Invested: ₹{snap['invested_value']:>12,.0f}"
         f" | Present: ₹{snap['present_value']:>12,.0f}"
         f" | P&L: {snap['pnl_pct']:+.2f}%",
@@ -591,9 +592,9 @@ for name, fn in [
 # ============================================================
 # STAGE 8: ThesisManager
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 8 — ThesisManager: Persistence, Inference & Updates")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 8 — ThesisManager: Persistence, Inference & Updates")
+logger.info(SEP)
 
 with patch("google.genai.Client"):
     from thesis_manager import ThesisManager
@@ -686,9 +687,9 @@ for name, fn in [
 # ============================================================
 # STAGE 9: Quality Critic (classify_news_items)
 # ============================================================
-print(f"\n{SEP}")
-print("  STAGE 9 — Quality Critic: SIGNAL / NOISE Classification (MOCKED)")
-print(SEP)
+logger.info(f"\n{SEP}")
+logger.info("  STAGE 9 — Quality Critic: SIGNAL / NOISE Classification (MOCKED)")
+logger.info(SEP)
 
 _MOCK_CRITIC_CLASSIFICATIONS = [
     {"id": 0, "classification": "SIGNAL", "reason": "Earnings structural."},
@@ -752,31 +753,31 @@ passed = sum(1 for r in RESULTS if r[0])
 failed = sum(1 for r in RESULTS if not r[0])
 total  = len(RESULTS)
 
-print(f"\n{'=' * 65}")
-print("  📋  DRY RUN SUMMARY")
-print('=' * 65)
-print(f"\n  Total checks: {total}  |  {PASS} Passed: {passed}  |  {FAIL} Failed: {failed}\n")
+logger.info(f"\n{'=' * 65}")
+logger.info("  📋  DRY RUN SUMMARY")
+logger.info('=' * 65)
+logger.error(f"\n  Total checks: {total}  |  {PASS} Passed: {passed}  |  {FAIL} Failed: {failed}\n")
 
 if failed:
-    print("  Failed checks:")
+    logger.error("  Failed checks:")
     for ok, name, err in RESULTS:
         if not ok:
-            print(f"    {FAIL}  {name}")
+            logger.error(f"    {FAIL}  {name}")
             if err:
-                print(f"         └─ {err}")
-    print()
+                logger.info(f"         └─ {err}")
+    logger.info()
 
 if failed == 0:
-    print("  🎉  ALL CHECKS PASSED — Pipeline is verified and ready for live run!")
-    print()
-    print("  📝  Next steps:")
-    print("       1. Fill in real values in .env")
-    print("       2. Run:  source venv/bin/activate")
-    print("       3. Then: python main.py --dry-run   (formats, no Telegram send)")
-    print("       4. Then: python main.py             (full live run)")
+    logger.info("  🎉  ALL CHECKS PASSED — Pipeline is verified and ready for live run!")
+    logger.info()
+    logger.info("  📝  Next steps:")
+    logger.info("       1. Fill in real values in .env")
+    logger.info("       2. Run:  source venv/bin/activate")
+    logger.info("       3. Then: python main.py --dry-run   (formats, no Telegram send)")
+    logger.info("       4. Then: python main.py             (full live run)")
 else:
-    print("  ⚠️   Some checks failed — review output above before going live.")
+    logger.warning("  ⚠️   Some checks failed — review output above before going live.")
 
-print('=' * 65)
-print()
+logger.info('=' * 65)
+logger.info()
 sys.exit(0 if failed == 0 else 1)

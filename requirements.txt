@@ -2,3 +2,8 @@ google-genai
 pandas
 python-dotenv
 requests
+fastmcp
+yfinance
+python-telegram-bot[webhooks]
+loguru
+google-cloud-storage
