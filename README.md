@@ -1,17 +1,16 @@
 # 🟢 Portfolio Pulse
 
-**Portfolio Pulse** is an AI-powered portfolio briefing engine that delivers daily qualitative and quantitative insights directly to your Telegram. It leverages **Google Gemini 2.5 Flash** with Google Search grounding to analyze your stocks, identify red/green flags, and suggest fresh market opportunities.
+**Portfolio Pulse** is an AI-powered portfolio briefing engine that delivers qualitative and quantitative insights directly to your Telegram. It leverages **Google Gemini 2.5 Flash** with native Google News RSS scraping to analyze your stock investments, identify red/green flags, and extract actionable market advice.
 
 ---
 
 ## 🚀 Key Features
 
-- **Efficient AI Analysis**: Uses a optimized 2-call Gemini architecture to analyze your entire portfolio without hitting API rate limits.
+- **Efficient AI Analysis**: Uses a optimized multi-call Gemini architecture to analyze your entire portfolio simultaneously without hitting severe API rate limits.
 - **Sentiment Tracking**: Automatically categorizes news into **Green Flags** (positive), **Red Flags** (negative), and **Watch List** items.
-- **Actionable Deep Dives**: Provides specific "BUY MORE", "HOLD", or "CONSIDER EXIT" signals for flagged holdings with detailed rationales.
-- **Live Scout Picks**: Every run fetches 3 fresh "Scout Suggestions" from the Indian market using live Google Search data.
-- **Telegram Integration**: Beautifully formatted reports delivered to your phone every morning.
-- **Financial Snapshot**: Real-time calculation of Invested Value, Present Value, and Unrealized P&L.
+- **Actionable Deep Dives**: Provides specific "BUY MORE", "HOLD", or "CONSIDER EXIT" signals for flagged holdings based on strict market indicators.
+- **Zero-Cost Scaling**: Extensively refactored specifically to run within the free-tiers of **Google Cloud Run** and **GCP Cloud Scheduler**.
+- **Financial Snapshot**: Aggregates Invested Value, Present Value, and Unrealized P&L natively directly out of Zerodha exports.
 
 ---
 
@@ -19,78 +18,43 @@
 
 ### 1. Prerequisites
 - Python 3.11+
+- A Google Cloud Platform (GCP) Project with **Cloud Run** and **Cloud Storage** enabled.
 - A [Gemini API Key](https://aistudio.google.com/app/apikey)
 - A Telegram Bot (created via [@BotFather](https://t.me/botfather))
-- Your Telegram Chat ID (via [@userinfobot](https://t.me/userinfobot))
 
-### 2. Manual Data Input
-You must manually place your portfolio data in the project root:
-1. Export your portfolio as a CSV from your broker.
-2. Ensure it is named `portfolio.csv`.
-3. Place it in the same directory as `main.py`.
+### 2. State & Data Security
+To prevent financial data leaks on GitHub, your portfolio state and investment memories are natively secured inside Google Cloud Storage (GCS).
+1. Create a GCS bucket (e.g., `gs://portfolio-pulse-memory/`).
+2. Upload your broker's `portfolio.csv` to this bucket securely.
 
-> [!IMPORTANT]
-> The script expects specific columns like `Symbol`, `Average Price`, `Quantity Available`, and `Previous Closing Price`.
-
-### 3. Environment Variables
-Create a `.env` file in the root directory:
-```env
-GEMINI_API_KEY=your_gemini_api_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-```
-
-### 4. Installation
-```bash
-pip install -r requirements.txt
-```
+### 3. Serverless Deployment
+The infrastructure is 100% Serverless and runs reliably without manual interactions.
+It consists of exactly three pillars:
+1. **Interactive Webhook**: Deployed as a web service (`gcloud run deploy ...`).
+2. **Daily Briefing**: Deployed as a Cloud Run Job mapped to `main.py`.
+3. **Passive Guardian**: Deployed as a Cloud Run Job mapped to `guardian_check.py`.
 
 ---
 
-## 📈 Usage
+## 📈 The Three Engine Pillars (Usage)
 
-### Run Manually
-To generate and send a report immediately:
-```bash
-python main.py
-```
+This system is fully automated and designed to cover you comprehensively:
 
-### Dry Run (Preview)
-To see the report in your terminal without sending it to Telegram:
-```bash
-python main.py --dry-run
-```
+### 1. Telegram Chat (Interactive)
+Send `/check TICKER` (e.g., `/check HDFCBANK`) to your Telegram bot. 
+The Webhook instance securely queries Google News RSS, evaluates it against your formally inferred investment thesis, and instantly responds with an analysis.
 
-### Equity Only Analysis
-To skip Mutual Funds/ETFs and only analyze direct stocks:
-```bash
-python main.py --equity-only
-```
+### 2. Passive Monitoring (The Guardian)
+Triggered securely via GCP Cloud Scheduler periodically (every 4 hours). 
+The job spins up `guardian_check.py`, silently iterating over your portfolio and ONLY sending a proactive Telegram push if a High-Signal (e.g., an alarming drop or huge breakout event) is detected organically in the news layer.
 
----
-
-## 🤖 Daily Automation (GitHub Actions)
-
-This project is configured to run automatically using GitHub Actions. A cron job is set to trigger every day at **08:00 AM IST** (02:30 UTC).
-
-### Steps to enable automation:
-1. Go to your GitHub Repository **Settings** > **Secrets and variables** > **Actions**.
-2. Add the following **Repository Secrets**:
-   - `GEMINI_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
-3. The workflow is already defined in `.github/workflows/daily_report.yml`.
-
-Every morning, you will receive a notification with your portfolio's health, news analysis, and fresh stock picks.
-
----
-
-## 📄 The Daily Report Includes:
-- **Financial Snapshot**: Your total wealth and profit/loss summary.
-- **Portfolio Health**: AI-generated health score and top-level rationale.
-- **Sentiment Flags**: 🟢 Positive news vs 🔴 Negative impact news.
-- **Strategy Deep Dive**: Specific calls (Buy/Sell/Hold) for stocks with major news.
-- **Scout Suggestions**: 🔭 3 trending stock ideas for the day based on fresh market research.
+### 3. Daily Briefings (The Orchestrator)
+Triggered securely via GCP Cloud Scheduler strictly at 8:00 AM IST daily.
+The job spins up `main.py`, securely downloading your `portfolio.csv` out of your GCS bucket, and structuring the ultimate morning summary push containing:
+- **Financial Snapshot**: Wealth and P&L.
+- **Portfolio Health**: AI-generated health score.
+- **Strategy Deep Dive**: Specific calls (Buy/Sell/Hold).
+- **Scout Suggestions**: 🔭 3 trending stock ideas for the day.
 
 ---
 
@@ -98,17 +62,17 @@ Every morning, you will receive a notification with your portfolio's health, new
 
 ```text
 .
-├── .github/
-│   └── workflows/
-│       └── daily_report.yml    # Automation cron job configuration
-├── core.py                    # Dual-call Gemini analysis pipeline
-├── main.py                    # Main orchestrator (entry point)
-├── telegram_notifier.py       # Telegram formatting and notification logic
+├── ingestion/                 # Abstracted Data Input Layer
+│   ├── csv_source.py          # State engine loading configs from GCS natively
+│   └── news_source.py         # Google News RSS scraper natively bypassing subnets
+├── logic/                     # The Core Machine Learning architectures
+│   ├── thesis_manager.py      # Automated Thesis inference & memory persistence
+│   ├── critic.py              # Evaluates NOISE vs SIGNAL metrics natively
+│   └── llm_client.py          # Gemini 2.5 flash injection binding
+├── main.py                    # The Daily Orchestrator (Pillar 3)
+├── guardian_check.py          # The Passive Monitor (Pillar 2)
+├── interactive_bot.py         # The Interactive Chat Engine (Webhook / Pillar 1)
+├── telegram_notifier.py       # Core telemetry logic for routing notifications
 ├── requirements.txt           # Python dependencies
-├── portfolio.csv              # USER INPUT: Your actual holdings
-├── scout_suggestions.json     # Cached/recent scout stock picks
-├── dry_run_test.py            # Local testing script
-├── .gitignore                 # Files/folders to ignore in Git
-└── .env                       # Environment variables (Local only)
+└── .gitignore                 # Actively blocks local sensitive CSVs from Git leaks
 ```
-
