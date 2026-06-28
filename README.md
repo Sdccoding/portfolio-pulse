@@ -6,11 +6,11 @@
 
 ## 🚀 Key Features
 
-- **Efficient AI Analysis**: Uses a optimized multi-call Gemini architecture to analyze your entire portfolio simultaneously without hitting severe API rate limits.
+- **Flexible LLM Execution**: Supports **Google Gemini 2.5 Flash** (default cloud), **Local Ollama** (with client-side DuckDuckGo tool-calling grounding), and **GCP Cloud Run vLLM** (high-performance NVIDIA L4 GPU serverless serving).
 - **Sentiment Tracking**: Automatically categorizes news into **Green Flags** (positive), **Red Flags** (negative), and **Watch List** items.
 - **Actionable Deep Dives**: Provides specific "BUY MORE", "HOLD", or "CONSIDER EXIT" signals for flagged holdings based on strict market indicators.
-- **Zero-Cost Scaling**: Extensively refactored specifically to run within the free-tiers of **Google Cloud Run** and **GCP Cloud Scheduler**.
-- **Financial Snapshot**: Aggregates Invested Value, Present Value, and Unrealized P&L natively directly out of Zerodha exports.
+- **Zero-Cost Scaling**: Runs entirely serverless within the free tiers of **Google Cloud Run** and **GCP Cloud Scheduler**.
+- **Financial Snapshot**: Aggregates Invested Value, Present Value, and Unrealized P&L natively from broker exports.
 
 ---
 
@@ -76,3 +76,19 @@ The job spins up `main.py`, securely downloading your `portfolio.csv` out of you
 ├── requirements.txt           # Python dependencies
 └── .gitignore                 # Actively blocks local sensitive CSVs from Git leaks
 ```
+
+---
+
+## ⚡ Inference Engines & Benchmarking
+
+The briefing engine supports running inference across three primary backends:
+1. **Google Gemini 2.5 Flash** (Production Cloud API - Default)
+2. **Local Ollama** (Fully offline CPU/M-series Mac, uses `qwen2.5:0.5b` or `llama3.1`)
+3. **GCP Cloud Run vLLM** (Serverless NVIDIA L4 GPU deployment running `Qwen2.5-0.5B-Instruct` mounted via GCS FUSE)
+
+To inspect setup guides, load-testing scripts, or performance results comparing these engines under concurrency:
+* **Local Ollama Setup Guide**: See [LOCAL_VLLM_TESTING.md](infra/LOCAL_VLLM_TESTING.md)
+* **GCP Cloud Run vLLM GPU Serverless Deployment Guide**: See [GCP_VLLM_DEPLOYMENT.md](infra/GCP_VLLM_DEPLOYMENT.md)
+* **Concurrent Load Testing Script**: See [benchmark_load.py](infra/benchmark_load.py)
+* **Performance Benchmark Results**: See [BENCHMARK_RESULTS.md](infra/BENCHMARK_RESULTS.md) for TTFT, ITL, and KV Cache metrics under load.
+
