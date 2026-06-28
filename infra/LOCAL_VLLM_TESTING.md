@@ -13,19 +13,18 @@ To run vLLM on macOS (with CPU support or Rosetta emulation), use the official `
 docker run -d -p 8000:8000 \
   --name local-vllm \
   --ipc=host \
-  vllm/vllm-openai:latest \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --device cpu
+  vllm/vllm-openai-cpu:latest-arm64 \
+  --model Qwen/Qwen2.5-0.5B-Instruct
 ```
+*(Note: If you are on an Intel Mac or x86_64 architecture, use `latest-x86_64` instead of `latest-arm64`.)*
 
 ### Option B: TinyLlama (1.1B)
 ```bash
 docker run -d -p 8000:8000 \
   --name local-vllm \
   --ipc=host \
-  vllm/vllm-openai:latest \
-  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
-  --device cpu
+  vllm/vllm-openai-cpu:latest-arm64 \
+  --model TinyLlama/TinyLlama-1.1B-Chat-v1.0
 ```
 
 ### Check Container Status
