@@ -1,4 +1,6 @@
 google-genai
+openai
+duckduckgo-search
 pandas
 python-dotenv
 requests

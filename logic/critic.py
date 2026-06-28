@@ -6,7 +6,7 @@ The Reasoning Brain. Evaluates news against a ticker's investment thesis.
 from loguru import logger
 
 import json
-from logic.llm_client import client, MODEL_ID, CRITIC_CONFIG
+from logic import llm_client
 from logic.thesis_manager import get_or_infer_thesis
 
 _EVALUATE_NEWS_PROMPT = """\
@@ -64,19 +64,14 @@ def evaluate_news(ticker: str, news_headline: str) -> dict:
     )
 
     try:
-        # 3. Call Gemini using CRITIC_CONFIG (no search grounding, just reasoning)
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=CRITIC_CONFIG,
-        )
+        # 3. Call LLM using the factory (no grounding — just reasoning)
+        response = llm_client.generate(prompt, use_grounding=False)
 
-        raw = (response.text or "").strip()
-        if raw.startswith("```"):
-            raw = "\n".join(
-                l for l in raw.splitlines() if not l.strip().startswith("```")
-            ).strip()
-
+        raw = response.text.strip()
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            raw = raw[start:end + 1]
         data = json.loads(raw)
         return {
             "headline": news_headline,

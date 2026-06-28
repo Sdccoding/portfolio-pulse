@@ -36,10 +36,13 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 REQUIRED_KEYS = {
-    "GEMINI_API_KEY"      : "Gemini API key — https://aistudio.google.com/app/apikey",
     "TELEGRAM_BOT_TOKEN"  : "Telegram Bot Token — via @BotFather",
     "TELEGRAM_CHAT_ID"    : "Your Telegram Chat ID — via @userinfobot",
 }
+
+# GEMINI_API_KEY is only required when using the Gemini provider
+if os.getenv("LLM_PROVIDER", "gemini").strip().lower() == "gemini":
+    REQUIRED_KEYS["GEMINI_API_KEY"] = "Gemini API key — https://aistudio.google.com/app/apikey"
 
 _PLACEHOLDER_PREFIXES = ("your_", "replace_", "<")
 
@@ -335,6 +338,10 @@ def main() -> None:
     missing_keys = validate_env()
     if missing_keys:
         abort_with_missing_keys(missing_keys)
+
+    # Log active LLM provider
+    from logic import llm_client
+    logger.info(f"[Config] LLM Provider: {llm_client.get_provider().upper()}")
 
     # ── Step 1: Load portfolio.csv ───────────────────────────────────────────
     df = load_portfolio_csv()

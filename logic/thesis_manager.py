@@ -213,23 +213,19 @@ class ThesisManager:
         Infer thesis via Gemini CoT prompt, persist, and return primary_thesis.
         Falls back to 'Growth Play' on error.
         """
-        from logic.llm_client import client, MODEL_ID, GENERATION_CONFIG
+        from logic import llm_client
 
         prompt = _COT_THESIS_PROMPT.format(ticker=ticker, sector=sector)
         today  = _date.today().strftime("%Y-%m-%d")
 
         try:
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=prompt,
-                config=GENERATION_CONFIG,
-            )
-            raw = (response.text or "").strip()
-            if raw.startswith("```"):
-                raw = "\n".join(
-                    l for l in raw.splitlines() if not l.strip().startswith("```")
-                ).strip()
-
+            response = llm_client.generate(prompt, use_grounding=True)
+            # Extract outer JSON braces
+            raw = response.text.strip()
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                raw = raw[start:end + 1]
             data       = json.loads(raw)
             thesis     = data.get("primary_thesis", "Growth Play")
             rationales = data.get("rationales", [thesis])
@@ -260,7 +256,7 @@ class ThesisManager:
         Single Gemini+Search call to infer theses for ALL missing tickers.
         Returns ticker → thesis dict. Falls back to 'Growth Play' for failures.
         """
-        from logic.llm_client import client, MODEL_ID, GENERATION_CONFIG
+        from logic import llm_client
 
         stocks_json = json.dumps(
             [{"ticker": t, "sector": s} for t, s in missing],
@@ -271,18 +267,29 @@ class ThesisManager:
         results: dict[str, str] = {}
 
         try:
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=prompt,
-                config=GENERATION_CONFIG,
-            )
-            raw = (response.text or "").strip()
-            if raw.startswith("```"):
-                raw = "\n".join(
-                    l for l in raw.splitlines() if not l.strip().startswith("```")
-                ).strip()
+            response = llm_client.generate(prompt, use_grounding=True)
+            raw = response.text.strip()
+            start_bracket = raw.find("[")
+            start_brace = raw.find("{")
+            if start_bracket != -1 and (start_brace == -1 or start_bracket < start_brace):
+                start, end = start_bracket, raw.rfind("]")
+            else:
+                start, end = start_brace, raw.rfind("}")
 
-            items: list[dict] = json.loads(raw)
+            if start != -1 and end != -1 and end > start:
+                raw = raw[start:end + 1]
+
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                items = []
+                for k, v in parsed.items():
+                    if isinstance(v, list):
+                        items = v
+                        break
+                if not items:
+                    items = [parsed]
+            else:
+                items = parsed
 
             for item in items:
                 ticker     = item.get("ticker", "")

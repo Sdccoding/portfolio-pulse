@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ["GEMINI_API_KEY"]        = "DRY_RUN_DUMMY_GEMINI_KEY"
 os.environ["TELEGRAM_BOT_TOKEN"]     = "DRY_RUN_DUMMY_TOKEN"
 os.environ["TELEGRAM_CHAT_ID"]       = "123456789"
+os.environ["LLM_PROVIDER"]           = "gemini"
 
 from unittest.mock import MagicMock, patch
 from datetime import datetime
@@ -68,28 +69,30 @@ MOCK_SCOUTS = [
      "why": "All-time high after BofA upgrade to BUY with ₹640 target."},
 ]
 
-def mock_gemini_response(text=MOCK_ANALYSIS):
-    resp = MagicMock()
-    resp.text = text
-    chunk = MagicMock()
-    chunk.web.uri = "https://www.moneycontrol.com/news/sbin-q3.html"
-    candidate = MagicMock()
-    candidate.grounding_metadata.grounding_chunks = [chunk]
-    resp.candidates = [candidate]
-    return resp
+from logic.llm_client import LLMResponse
+
+def mock_llm_response(text=MOCK_ANALYSIS, grounding_sources=None):
+    """Create a mock LLMResponse matching the factory's unified interface."""
+    return LLMResponse(
+        text=text,
+        grounding_sources=grounding_sources or ["https://www.moneycontrol.com/news/sbin-q3.html"],
+    )
+
+# Keep old name as alias for backward compat within this file
+mock_gemini_response = mock_llm_response
 
 def mock_scout_response():
-    """Gemini response that returns valid scout JSON."""
+    """LLMResponse that returns valid scout JSON."""
     from datetime import date
     payload = {
         "date": date.today().strftime("%Y-%m-%d"),
         "analyst_note": "Markets mixed. Selective opportunities in EV and IT.",
         "scout_suggestions": MOCK_SCOUTS,
     }
-    return mock_gemini_response(text=json.dumps(payload))
+    return mock_llm_response(text=json.dumps(payload))
 
 # ============================================================
-logger.info()
+logger.info("")
 logger.info("=" * 65)
 logger.info("  🧪  Portfolio Pulse — End-to-End Dry Run")
 logger.info(f"  🕐  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -118,8 +121,7 @@ def t1_requests():
     assert requests.__version__
 
 def t1_core():
-    with patch("google.genai.Client"):
-        import core
+    import core
 
 def t1_telegram():
     import telegram_notifier
@@ -135,8 +137,8 @@ for name, fn in [
     run_test(name, fn)
 
 # Now do real imports for subsequent stages
-with patch("google.genai.Client"):
-    import core
+import core
+from logic import llm_client
 import telegram_notifier as tn
 import main
 
@@ -167,13 +169,13 @@ def t2_columns():
 def t2_count():
     df = core.load_portfolio()
     count = len(df)
-    logger.info(f"\n       Holdings loaded: {count}", end="")
+    logger.info(f"\n       Holdings loaded: {count}")
     assert count >= 50, f"Expected ≥50, got {count}"
 
 def t2_instrument_types():
     df = core.load_portfolio()
     types_ = df["Instrument Type"].value_counts().to_dict()
-    logger.info(f"\n       Instrument types: {types_}", end="")
+    logger.info(f"\n       Instrument types: {types_}")
     assert "Equity" in types_
 
 def t2_numeric():
@@ -280,23 +282,22 @@ MOCK_DEEP_DIVE = [
 ]
 
 def _mock_overview_response():
-    return mock_gemini_response(text=json.dumps({"market_overview": MOCK_OVERVIEW["market_overview"],
+    return mock_llm_response(text=json.dumps({"market_overview": MOCK_OVERVIEW["market_overview"],
        **MOCK_OVERVIEW}))
 
 def _mock_deep_dive_response():
-    return mock_gemini_response(text=json.dumps({"deep_dive": MOCK_DEEP_DIVE}))
+    return mock_llm_response(text=json.dumps({"deep_dive": MOCK_DEEP_DIVE}))
 
-def _mock_all_gemini_v2(model, contents, config):
+def _mock_all_llm(prompt, use_grounding=True):
     """Route mock responses: scout → scout JSON, deep_dive → dive JSON, else overview JSON."""
-    if "scout_suggestions" in contents and "rank" not in contents:
-        # Scout prompt (contains schema with scout_suggestions key)
+    if "scout_suggestions" in prompt and "rank" not in prompt:
         from datetime import date
-        return mock_gemini_response(text=json.dumps({
+        return mock_llm_response(text=json.dumps({
             "date": date.today().strftime("%Y-%m-%d"),
             "analyst_note": "Mixed market.",
             "scout_suggestions": MOCK_SCOUTS,
         }))
-    elif "deep_dive" in contents or "flagged" in contents.lower():
+    elif "deep_dive" in prompt or "flagged" in prompt.lower():
         return _mock_deep_dive_response()
     else:
         return _mock_overview_response()
@@ -333,17 +334,17 @@ def t4_qty_present_in_table():
 def t4_fetch_overview():
     """fetch_portfolio_overview returns the right keys (mocked)."""
     df = core.load_portfolio()
-    core.client.models.generate_content = MagicMock(return_value=_mock_overview_response())
+    llm_client.generate = MagicMock(return_value=_mock_overview_response())
     overview = core.fetch_portfolio_overview(df)
     for k in ["market_overview", "portfolio_health", "green_flags", "red_flags", "neutral_watch"]:
         assert k in overview, f"Missing key in overview: {k}"
-    logger.info(f"\n       Green: {len(overview['green_flags'])}  Red: {len(overview['red_flags'])}", end="")
+    logger.info(f"\n       Green: {len(overview['green_flags'])}  Red: {len(overview['red_flags'])}")
 
 def t4_fetch_deep_dive():
     """fetch_flagged_deep_dive covers only the flagged symbols (mocked)."""
     df = core.load_portfolio()
     flagged = ["SBIN", "TCS"]
-    core.client.models.generate_content = MagicMock(return_value=_mock_deep_dive_response())
+    llm_client.generate = MagicMock(return_value=_mock_deep_dive_response())
     dives = core.fetch_flagged_deep_dive(df, flagged)
     assert isinstance(dives, list)
     assert len(dives) > 0
@@ -353,11 +354,11 @@ def t4_fetch_deep_dive():
 def t4_orchestrator():
     """fetch_portfolio_analyses returns overview + deep_dive dict (mocked)."""
     df = core.load_portfolio()
-    core.client.models.generate_content = MagicMock(side_effect=lambda model, contents, config:
-        _mock_deep_dive_response() if "deep_dive" in contents else _mock_overview_response())
+    llm_client.generate = MagicMock(side_effect=lambda prompt, use_grounding=True:
+        _mock_deep_dive_response() if "deep_dive" in prompt else _mock_overview_response())
     result = core.fetch_portfolio_analyses(df)
     assert "overview" in result and "deep_dive" in result
-    logger.info(f"\n       Deep dive symbols: {[d['symbol'] for d in result['deep_dive']]}", end="")
+    logger.info(f"\n       Deep dive symbols: {[d['symbol'] for d in result['deep_dive']]}")
 
 for name, fn in [
     ("build_portfolio_table: has Qty column + key symbols",    t4_portfolio_table),
@@ -378,14 +379,14 @@ logger.info(SEP)
 
 def t5_live_fetch_returns_3():
     """Live fetch returns 3 picks (Gemini mocked with valid JSON)."""
-    core.client.models.generate_content = MagicMock(return_value=mock_scout_response())
+    llm_client.generate = MagicMock(return_value=mock_scout_response())
     picks = core.fetch_scout_suggestions(save_to_file=False)
     assert len(picks) == 3, f"Expected 3 picks, got {len(picks)}"
-    logger.info(f"\n       Picks returned: {len(picks)}", end="")
+    logger.info(f"\n       Picks returned: {len(picks)}")
 
 def t5_live_fetch_required_fields():
     """Every pick has the required schema fields."""
-    core.client.models.generate_content = MagicMock(return_value=mock_scout_response())
+    llm_client.generate = MagicMock(return_value=mock_scout_response())
     picks = core.fetch_scout_suggestions(save_to_file=False)
     for p in picks:
         assert "ticker" in p or "symbol" in p, f"No ticker in pick: {p}"
@@ -399,7 +400,7 @@ def t5_live_fetch_saves_json():
     orig_path = core.SCOUT_JSON_PATH
     core.SCOUT_JSON_PATH = tmp
     try:
-        core.client.models.generate_content = MagicMock(return_value=mock_scout_response())
+        llm_client.generate = MagicMock(return_value=mock_scout_response())
         core.fetch_scout_suggestions(save_to_file=True)
         assert _os.path.exists(tmp), "JSON file was not written!"
         with open(tmp) as f:
@@ -414,11 +415,11 @@ def t5_live_fetch_saves_json():
 def t5_live_fetch_fallback_on_error():
     """If Gemini fails, falls back to existing scout_suggestions.json."""
     # Simulate a network/API error
-    core.client.models.generate_content = MagicMock(side_effect=Exception("API down"))
+    llm_client.generate = MagicMock(side_effect=Exception("API down"))
     picks = core.fetch_scout_suggestions(save_to_file=False)
     # Should not raise — returns cached file or empty list
     assert isinstance(picks, list)
-    logger.info(f"\n       Fallback picks: {len(picks)}", end="")
+    logger.info(f"\n       Fallback picks: {len(picks)}")
 
 for name, fn in [
     ("fetch_scout_suggestions: returns 3 live picks (mocked)",    t5_live_fetch_returns_3),
@@ -493,7 +494,7 @@ def t6_scout_picks():
 def t6_length():
     report = tn.build_telegram_report(MOCK_BRIEFING)
     l = len(report)
-    logger.info(f"\n       Formatted message length: {l} chars", end="")
+    logger.info(f"\n       Formatted message length: {l} chars")
     assert l <= 6000, f"Too long: {l} chars"
 
 def t6_cred_guard():
@@ -531,7 +532,7 @@ logger.info(SEP)
 
 def t7_validate_env():
     missing = main.validate_env()
-    logger.info(f"\n       Missing env keys: {missing}", end="")
+    logger.info(f"\n       Missing env keys: {missing}")
     assert missing == [], f"validate_env raised false alarm: {missing}"
 
 def t7_load_csv():
@@ -539,7 +540,7 @@ def t7_load_csv():
     assert len(df) > 0
 
 def t7_load_scouts():
-    core.client.models.generate_content = MagicMock(return_value=mock_scout_response())
+    llm_client.generate = MagicMock(return_value=mock_scout_response())
     scouts = main.load_scout_suggestions()
     assert len(scouts) == 3, f"Expected 3 picks, got {len(scouts)}"
 
@@ -551,8 +552,7 @@ def t7_snapshot():
     logger.info(
         f"\n       Invested: ₹{snap['invested_value']:>12,.0f}"
         f" | Present: ₹{snap['present_value']:>12,.0f}"
-        f" | P&L: {snap['pnl_pct']:+.2f}%",
-        end=""
+        f" | P&L: {snap['pnl_pct']:+.2f}%"
     )
 
 def t7_merge_briefing():
@@ -596,8 +596,7 @@ logger.info(f"\n{SEP}")
 logger.info("  STAGE 8 — ThesisManager: Persistence, Inference & Updates")
 logger.info(SEP)
 
-with patch("google.genai.Client"):
-    from thesis_manager import ThesisManager
+from thesis_manager import ThesisManager
 
 def _make_tm(tmp_path):
     """Create a ThesisManager backed by a temp file."""
@@ -636,7 +635,7 @@ def t8_infer_and_store():
         "rationales": ["Quality Compounder", "Export Growth", "Dividend Play"],
         "confidence": "High",
     }))
-    core.client.models.generate_content = MagicMock(return_value=mock_thesis_resp)
+    llm_client.generate = MagicMock(return_value=mock_thesis_resp)
     thesis = tm.infer_and_store("TCS", "IT")
     assert thesis == "Quality Compounder"
     assert tm.get_thesis("TCS") == "Quality Compounder"
@@ -652,7 +651,7 @@ def t8_ensure_existing():
     tm = _make_tm(tmp)
     tm.update_thesis("HDFCBANK", "Dividend Play")
     # Poison the API — it should NOT be called
-    core.client.models.generate_content = MagicMock(side_effect=Exception("Should not call API!"))
+    llm_client.generate = MagicMock(side_effect=Exception("Should not call API!"))
     thesis = tm.ensure_thesis("HDFCBANK", "Financial Services")
     assert thesis == "Dividend Play", f"Got: {thesis}"
     os.remove(tmp)
@@ -667,7 +666,7 @@ def t8_build_thesis_map():
         "ticker": "TCS", "primary_thesis": "Growth Play",
         "rationales": ["Growth Play"], "confidence": "Medium",
     }))
-    core.client.models.generate_content = MagicMock(return_value=mock_thesis_resp)
+    llm_client.generate = MagicMock(return_value=mock_thesis_resp)
     tmap = tm.build_thesis_map([("SBIN", "Financial Services"), ("TCS", "IT")])
     assert tmap["SBIN"] == "PSU Re-rating"
     assert tmap["TCS"] == "Growth Play"
@@ -711,7 +710,7 @@ def t9_classify_returns_quality_tags():
     dd = copy.deepcopy(MOCK_DEEP_DIVE)
     tmap = {"SBIN": "PSU Re-rating", "HDFCBANK": "Dividend Play",
             "TCS": "Quality Compounder", "RELIANCE": "Conglomerate Growth"}
-    core.client.models.generate_content = MagicMock(return_value=_mock_critic_response())
+    llm_client.generate = MagicMock(return_value=_mock_critic_response())
     updated_ov, updated_dd = core.classify_news_items(ov, dd, tmap)
     # Every flag should now have a quality key
     for flag_key in ("green_flags", "red_flags", "neutral_watch"):
@@ -723,7 +722,7 @@ def t9_classify_returns_quality_tags():
 
 def t9_classify_no_items_noop():
     """classify_news_items with empty overview does nothing (no API call)."""
-    core.client.models.generate_content = MagicMock(side_effect=Exception("Should not call"))
+    llm_client.generate = MagicMock(side_effect=Exception("Should not call"))
     empty_ov = {"green_flags": [], "red_flags": [], "neutral_watch": {}}
     updated_ov, updated_dd = core.classify_news_items(empty_ov, [], thesis_map={})
     assert updated_dd == []
@@ -734,7 +733,7 @@ def t9_classify_fails_open():
     ov = copy.deepcopy(MOCK_OVERVIEW)
     dd = copy.deepcopy(MOCK_DEEP_DIVE)
     tmap = {"SBIN": "PSU Re-rating", "HDFCBANK": "Dividend Play", "TCS": "Growth"}
-    core.client.models.generate_content = MagicMock(side_effect=Exception("API down"))
+    llm_client.generate = MagicMock(side_effect=Exception("API down"))
     updated_ov, updated_dd = core.classify_news_items(ov, dd, tmap)
     for item in updated_ov.get("green_flags", []):
         assert item.get("quality") == "SIGNAL", "Fail-open: expected SIGNAL"
@@ -765,11 +764,11 @@ if failed:
             logger.error(f"    {FAIL}  {name}")
             if err:
                 logger.info(f"         └─ {err}")
-    logger.info()
+    logger.info("")
 
 if failed == 0:
     logger.info("  🎉  ALL CHECKS PASSED — Pipeline is verified and ready for live run!")
-    logger.info()
+    logger.info("")
     logger.info("  📝  Next steps:")
     logger.info("       1. Fill in real values in .env")
     logger.info("       2. Run:  source venv/bin/activate")
@@ -779,5 +778,5 @@ else:
     logger.warning("  ⚠️   Some checks failed — review output above before going live.")
 
 logger.info('=' * 65)
-logger.info()
+logger.info("")
 sys.exit(0 if failed == 0 else 1)

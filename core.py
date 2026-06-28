@@ -17,36 +17,13 @@ import json
 import time
 import pandas as pd
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from logic import llm_client
 
 # ---------------------------------------------------------------------------
 # 1. Environment Setup
 # ---------------------------------------------------------------------------
 
 load_dotenv()
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise EnvironmentError(
-        "GEMINI_API_KEY not found. Please set it in your .env file."
-    )
-
-# ---------------------------------------------------------------------------
-# 2. Gemini Client — 2.5 Flash with Google Search Grounding
-# ---------------------------------------------------------------------------
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-MODEL_ID = "gemini-2.5-flash"
-
-# Google Search grounding tool — enables real-time web retrieval
-GOOGLE_SEARCH_TOOL = types.Tool(google_search=types.GoogleSearch())
-
-GENERATION_CONFIG = types.GenerateContentConfig(
-    tools=[GOOGLE_SEARCH_TOOL],
-    response_modalities=["TEXT"],
-)
 
 # ---------------------------------------------------------------------------
 # 3. Portfolio Loading
@@ -233,21 +210,25 @@ Rules:
 
 # ── Helper: extract grounding URLs ───────────────────────────────────────────
 
-def _extract_sources(response) -> list[str]:
-    try:
-        chunks = response.candidates[0].grounding_metadata.grounding_chunks
-        return [c.web.uri for c in chunks if c.web and c.web.uri]
-    except Exception:
-        return []
+def _extract_sources(llm_response) -> list[str]:
+    """Extract grounding source URLs from an LLMResponse."""
+    return llm_response.grounding_sources
 
 
 # ── Helper: strip JSON fences ─────────────────────────────────────────────────
 
 def _strip_fences(raw: str) -> str:
-    if raw.startswith("```"):
-        return "\n".join(
-            l for l in raw.splitlines() if not l.strip().startswith("```")
-        ).strip()
+    raw = raw.strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    
+    # Check for list fallback
+    if start == -1 or end == -1:
+        start = raw.find("[")
+        end = raw.rfind("]")
+        
+    if start != -1 and end != -1 and end > start:
+        return raw[start:end + 1]
     return raw
 
 
@@ -277,12 +258,8 @@ def fetch_portfolio_overview(df: pd.DataFrame) -> dict:
     prompt = _OVERVIEW_PROMPT.format(today=today, portfolio_table=portfolio_table)
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=GENERATION_CONFIG,
-        )
-        raw = _strip_fences((response.text or "").strip())
+        response = llm_client.generate(prompt, use_grounding=True)
+        raw = _strip_fences(response.text)
         data = json.loads(raw)
         data["grounding_sources"] = _extract_sources(response)
 
@@ -422,12 +399,8 @@ def fetch_flagged_deep_dive(df: pd.DataFrame, flagged_symbols: list[str]) -> lis
         )
 
         try:
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=prompt,
-                config=GENERATION_CONFIG,
-            )
-            raw = _strip_fences((response.text or "").strip())
+            response = llm_client.generate(prompt, use_grounding=True)
+            raw = _strip_fences(response.text)
 
             try:
                 data = json.loads(raw)
@@ -478,10 +451,7 @@ Rules:
 - Return ONLY the JSON array. No preamble, no markdown fences.
 """
 
-# Config WITHOUT search grounding — critic is pure reasoning, cheaper & faster
-_CRITIC_CONFIG = types.GenerateContentConfig(
-    response_modalities=["TEXT"],
-)
+# Critic uses use_grounding=False — pure reasoning, cheaper & faster
 
 
 def classify_news_items(
@@ -548,13 +518,19 @@ def classify_news_items(
     prompt = _CRITIC_PROMPT.format(items_json=json.dumps(items_for_llm, ensure_ascii=False))
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=_CRITIC_CONFIG,
-        )
-        raw = _strip_fences((response.text or "").strip())
-        classifications: list[dict] = json.loads(raw)
+        response = llm_client.generate(prompt, use_grounding=False)
+        raw = _strip_fences(response.text)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            classifications = []
+            for k, v in parsed.items():
+                if isinstance(v, list):
+                    classifications = v
+                    break
+            if not classifications:
+                classifications = [parsed]
+        else:
+            classifications = parsed
 
         # Build id → classification lookup
         quality_map = {c["id"]: c["classification"] for c in classifications}
@@ -717,13 +693,9 @@ def fetch_scout_suggestions(save_to_file: bool = True) -> list[dict]:
     prompt = _SCOUT_PROMPT.format(today=today_str)
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=GENERATION_CONFIG,
-        )
+        response = llm_client.generate(prompt, use_grounding=True)
 
-        raw_text = _strip_fences((response.text or "").strip())
+        raw_text = _strip_fences(response.text)
         data = json.loads(raw_text)
 
         suggestions = data.get("scout_suggestions", [])
